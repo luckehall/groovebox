@@ -104,6 +104,8 @@
     flex-shrink:0;
   }
   .monitor-badge.off { color:#ff6644; border-color:#662200; }
+  .monitor-badge.bt  { color:#9999ff; border-color:#4444aa; }
+  .monitor-badge { cursor:pointer; }
 
   /* ── TIMER ───────────────────────────────────── */
   .timer-block {
@@ -572,7 +574,7 @@
     <div class="status-bar">
       <div class="status-dot" id="statusDot"></div>
       <div class="status-text" id="statusText">STANDBY</div>
-      <div class="monitor-badge" id="monitorBadge">MON ON</div>
+      <div class="monitor-badge" id="monitorBadge" onclick="cycleMonitor()">MON JACK</div>
     </div>
   </div>
 
@@ -667,6 +669,7 @@
 
 <script>
 let appState='stopped', seconds=0, timerInt=null, playDuration=0, pollInt=null;
+let outputMode='jack';
 
 async function transport(action){
   try{ const r=await fetch('/api/'+action,{method:'POST'}); applyState(await r.json()); }
@@ -725,6 +728,22 @@ function applyState(d) {
   if(prev !== appState) startPolling();
 }
 
+function updateMonitorBadge(){
+  const badge=document.getElementById('monitorBadge');
+  badge.textContent=outputMode==='bt'?'OUT BT':'OUT JACK';
+  badge.className='monitor-badge'+(outputMode==='bt'?' bt':'');
+}
+
+async function cycleMonitor(){
+  const next=outputMode==='jack'?'bt':'jack';
+  try{
+    const r=await fetch('/api/output',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:next})});
+    const d=await r.json();
+    outputMode=d.output;
+    updateMonitorBadge();
+  }catch(e){ outputMode=next; updateMonitorBadge(); }
+}
+
 function updateUI(){
   const dot=document.getElementById('statusDot');
   const txt=document.getElementById('statusText');
@@ -736,9 +755,7 @@ function updateUI(){
   txt.textContent=label;
   if(dotClass) dot.classList.add(dotClass);
   if(btnId) document.getElementById(btnId)?.classList.add('active');
-  const monOff=appState==='playing';
-  badge.textContent=monOff?'MON OFF':'MON ON';
-  badge.className='monitor-badge'+(monOff?' off':'');
+  updateMonitorBadge();
   if(appState==='recording') document.getElementById('fileDuration').textContent=fmt(seconds);
 }
 
@@ -766,6 +783,7 @@ async function poll(){
     const r=await fetch('/api/status');
     const d=await r.json();
     if(d.status&&d.status!==appState) applyState(d);
+    if(d.output&&d.output!==outputMode){ outputMode=d.output; updateMonitorBadge(); }
     if(appState==='playing'&&d.play_seconds!==undefined){ seconds=d.play_seconds; updateTimer(); }
     if(appState==='recording'&&d.filesize) document.getElementById('fileSize').textContent=d.filesize;
     if(appState==='recording'&&d.seconds!==undefined&&Math.abs(d.seconds-seconds)>3){ seconds=d.seconds; updateTimer(); }

@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """
-GrooveBox Server v2.2 - Pi 4
-- Monitor PipeWire SEMPRE ATTIVO (anche durante REC)
-- 96kHz 24bit S24_3LE
-- Storage su /mnt/groovebox/Registrazioni
-- pw-record per registrazione
-- PAUSE toggle SIGSTOP/SIGCONT
-- FF/RW con sox
-- VU meter disabilitato
+GrooveBox Server v2.4 - Pi 4
+Logica audio:
+- STANDBY: monitor attivo sull'uscita selezionata (jack/bt)
+- REC:     monitor attivo sull'uscita selezionata (jack/bt)
+- PLAY:    monitor SPENTO, riproduzione sull'uscita selezionata (jack/bt)
+- Selettore: JACK / BT (no OFF)
 """
 
 import os
@@ -15,7 +13,6 @@ import time
 import signal
 import threading
 import subprocess
-import math
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, jsonify, send_file, abort, request
@@ -23,7 +20,7 @@ from flask import Flask, jsonify, send_file, abort, request
 # --- CONFIGURAZIONE ---------------------------------------------------
 
 RECORDINGS_DIR   = Path("/mnt/groovebox/Registrazioni")
-PLAYBACK_CARD    = "plughw:CARD=Headphones,DEV=0"
+PLAYBACK_JACK    = "plughw:CARD=Headphones,DEV=0"
 SAMPLE_RATE      = 96000
 CHANNELS         = 2
 BIT_DEPTH        = "S24_3LE"
@@ -32,8 +29,9 @@ BYTES_PER_FRAME  = BYTES_PER_SAMPLE * CHANNELS
 WAV_HEADER_SIZE  = 44
 FF_RW_SECONDS    = 10
 
-PW_SOURCE = "alsa_input.usb-Terratec_PhonoPreAmp_iVinyl-00.analog-stereo"
-PW_SINK   = "alsa_output.platform-fe00b840.mailbox.stereo-fallback"
+PW_SOURCE  = "alsa_input.usb-Terratec_PhonoPreAmp_iVinyl-00.analog-stereo"
+PW_SINK    = "alsa_output.platform-fe00b840.mailbox.stereo-fallback"
+PW_SINK_BT = "bluez_output.00_0E_9F_A4_F3_D4.1"
 
 app = Flask(__name__, static_folder=".")
 RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -53,13 +51,14 @@ state = {
     "play_duration": 0,
 }
 
-_lock         = threading.Lock()
-_timer_t      = None
-_rec_proc     = None
-_play_proc    = None
-_monitor_proc = None
-_play_paused  = False
+_lock            = threading.Lock()
+_timer_t         = None
+_rec_proc        = None
+_play_proc       = None
+_monitor_proc    = None
+_play_paused     = False
 _play_generation = 0
+_output          = "jack"  # "jack" o "bt"
 
 # --- UTILITY ---------------------------------------------------------
 
@@ -95,19 +94,24 @@ def _wav_duration(filepath):
     except Exception:
         return 0
 
+def _active_sink():
+    """Restituisce il PipeWire sink attivo in base all'output selezionato."""
+    return PW_SINK_BT if _output == "bt" else PW_SINK
+
 # --- MONITOR PIPEWIRE ------------------------------------------------
 
 def _start_monitor():
-    """Avvia loopback PipeWire Terratec -> Cuffie."""
+    """Avvia loopback PipeWire Terratec -> uscita selezionata."""
     global _monitor_proc
     if _monitor_proc and _monitor_proc.poll() is None:
         return
+    sink = _active_sink()
     cmd = (
         f'pw-loopback '
         f'--capture-props="node.name={PW_SOURCE}" '
-        f'--playback-props="node.name={PW_SINK}"'
+        f'--playback-props="node.name={sink}"'
     )
-    print(f"[MONITOR] Avvio...")
+    print(f"[MONITOR] Avvio ({_output}) -> {sink}")
     _monitor_proc = subprocess.Popen(
         cmd, shell=True,
         stdout=subprocess.DEVNULL,
@@ -135,7 +139,7 @@ def _stop_monitor():
     time.sleep(0.3)
 
 def _ensure_monitor():
-    """Riavvia il monitor se non e' attivo."""
+    """Riavvia il monitor se non e' attivo (solo in STANDBY e REC)."""
     global _monitor_proc
     if _monitor_proc is None or _monitor_proc.poll() is not None:
         _start_monitor()
@@ -164,7 +168,7 @@ def _stop_arecord():
     time.sleep(0.3)
 
 def _start_arecord(filepath):
-    """Avvia pw-record via PipeWire."""
+    """Avvia pw-record via PipeWire a 24bit."""
     global _rec_proc
     _stop_arecord()
     cmd = [
@@ -187,7 +191,7 @@ def _start_arecord(filepath):
         print("[REC] ERRORE: pw-record terminato subito!")
         _rec_proc = None
         return False
-    print("[REC] pw-record avviato.")
+    print("[REC] pw-record avviato (24bit).")
     return True
 
 def _pause_arecord():
@@ -223,7 +227,8 @@ def _stop_aplay():
                 _play_proc.wait()
             print("[PLAY] aplay fermato.")
         _play_proc = None
-    subprocess.run(["pkill", "-f", f"aplay.*{PLAYBACK_CARD}"], capture_output=True)
+    subprocess.run(["pkill", "-f", "aplay.*Headphones"], capture_output=True)
+    subprocess.run(["pkill", "-f", "pw-play"], capture_output=True)
     subprocess.run(["pkill", "-f", "sox.*Registrazioni"], capture_output=True)
     time.sleep(0.3)
 
@@ -248,13 +253,18 @@ def _resume_aplay():
     return False
 
 def _start_aplay(filepath, start_second=0):
-    """Avvia riproduzione file WAV."""
+    """Avvia riproduzione file WAV sull'uscita selezionata."""
     global _play_proc
     _stop_aplay()
     time.sleep(0.2)
 
+    use_bt = (_output == "bt")
+
     if start_second == 0:
-        cmd = ["aplay", "-D", PLAYBACK_CARD, str(filepath)]
+        if use_bt:
+            cmd = ["pw-play", f"--target={PW_SINK_BT}", str(filepath)]
+        else:
+            cmd = ["aplay", "-D", PLAYBACK_JACK, str(filepath)]
         print(f"[PLAY] {' '.join(cmd)}")
         try:
             _play_proc = subprocess.Popen(
@@ -268,12 +278,18 @@ def _start_aplay(filepath, start_second=0):
             print(f"[PLAY] Errore: {e}")
             return False
     else:
-        cmd = (
-            f'sox "{filepath}" -t raw -r {SAMPLE_RATE} -c {CHANNELS} -e signed -b 16 - '
-            f'trim {start_second} | '
-            f'aplay -D {PLAYBACK_CARD} -r {SAMPLE_RATE} -c {CHANNELS} -f S16_LE -'
-        )
-        print(f"[PLAY] FF/RW da {_fmt_time(start_second)}")
+        if use_bt:
+            cmd = (
+                f'sox "{filepath}" -t wav -p trim {start_second} | '
+                f'pw-play --target={PW_SINK_BT} -'
+            )
+        else:
+            cmd = (
+                f'sox "{filepath}" -t raw -r {SAMPLE_RATE} -c {CHANNELS} -e signed -b 16 - '
+                f'trim {start_second} | '
+                f'aplay -D {PLAYBACK_JACK} -r {SAMPLE_RATE} -c {CHANNELS} -f S16_LE -'
+            )
+        print(f"[PLAY] FF/RW da {_fmt_time(start_second)} ({_output})")
         try:
             _play_proc = subprocess.Popen(
                 cmd,
@@ -288,7 +304,7 @@ def _start_aplay(filepath, start_second=0):
             return False
 
 def _play_monitor_loop(generation):
-    """Monitora fine riproduzione. Si ferma se la generazione è cambiata."""
+    """Monitora fine riproduzione."""
     global _play_proc, _play_paused, _play_generation
     start_time = time.time()
     with _lock:
@@ -312,6 +328,7 @@ def _play_monitor_loop(generation):
                         "status":       "stopped",
                         "play_seconds": 0,
                     })
+            # Riaccendi monitor dopo fine PLAY
             _ensure_monitor()
             print("[PLAY] Riproduzione terminata.")
             break
@@ -360,7 +377,38 @@ def index():
 @app.route("/api/status")
 def api_status():
     with _lock:
-        return jsonify(dict(state))
+        s = dict(state)
+    s["output"] = _output
+    return jsonify(s)
+
+@app.route("/api/output", methods=["POST"])
+def api_output():
+    """Cambia uscita audio: jack o bt."""
+    global _output
+    data = request.get_json(silent=True) or {}
+    mode = data.get("mode", "jack")
+    if mode not in ("jack", "bt"):
+        mode = "jack"
+    _output = mode
+    print(f"[OUTPUT] Selezionato: {mode}")
+
+    with _lock:
+        current_status = state["status"]
+
+    if current_status == "playing":
+        # Durante PLAY: riavvia riproduzione sul nuovo output
+        with _lock:
+            fpath    = state.get("filepath")
+            play_sec = state.get("play_seconds", 0)
+        _stop_aplay()
+        time.sleep(0.2)
+        _start_aplay(fpath, start_second=play_sec)
+    else:
+        # STANDBY o REC: riavvia monitor sul nuovo output
+        _stop_monitor()
+        _start_monitor()
+
+    return jsonify({"output": _output})
 
 @app.route("/api/rec", methods=["POST"])
 def api_rec():
@@ -369,6 +417,7 @@ def api_rec():
 
     if current_status == "paused" and _rec_proc is not None:
         if _resume_from_pause():
+            _ensure_monitor()
             with _lock:
                 return jsonify(dict(state))
 
@@ -443,6 +492,7 @@ def api_pause():
 
     if current_status == "paused" and _rec_proc is not None and _play_proc is None:
         if _resume_from_pause():
+            _ensure_monitor()
             with _lock:
                 return jsonify(dict(state))
 
@@ -481,7 +531,7 @@ def api_play():
         return jsonify({"error": "file non trovato"}), 404
 
     _stop_arecord()
-    _stop_monitor()
+    _stop_monitor()    # Monitor spento durante PLAY
     _stop_aplay()
     _play_paused = False
     time.sleep(0.2)
@@ -496,7 +546,7 @@ def api_play():
             "play_filename": filename,
             "play_seconds":  0,
             "play_duration": duration,
-            "filesize":      filesize,    # <-- aggiungi
+            "filesize":      filesize,
             "level_l":       -60.0,
             "level_r":       -60.0,
         })
@@ -512,7 +562,7 @@ def api_play():
     gen = _play_generation
     t = threading.Thread(target=_play_monitor_loop, args=(gen,), daemon=True)
     t.start()
-    print(f"[PLAY] Avviato: {filename}")
+    print(f"[PLAY] Avviato: {filename} ({_output})")
     with _lock:
         return jsonify(dict(state))
 
@@ -597,6 +647,18 @@ def api_download(filename):
         abort(404)
     return send_file(str(fpath), as_attachment=True)
 
+@app.route("/manifest.json")
+def manifest():
+    return send_file("manifest.json", mimetype="application/json")
+
+@app.route("/icon-192.png")
+def icon192():
+    return send_file("icon-192.png", mimetype="image/png")
+
+@app.route("/icon-512.png")
+def icon512():
+    return send_file("icon-512.png", mimetype="image/png")
+
 @app.route("/api/shutdown", methods=["POST"])
 def api_shutdown():
     _stop_arecord()
@@ -613,10 +675,10 @@ def api_shutdown():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  GrooveBox Server v2.2 - Pi 4")
-    print(f"  Input:    PipeWire -> {PW_SOURCE}")
-    print(f"  Output:   {PLAYBACK_CARD}")
-    print(f"  Monitor:  SEMPRE ATTIVO")
+    print("  GrooveBox Server v2.4 - Pi 4")
+    print(f"  Input:    {PW_SOURCE}")
+    print(f"  Jack:     {PLAYBACK_JACK}")
+    print(f"  BT:       {PW_SINK_BT}")
     print(f"  Files:    {RECORDINGS_DIR}")
     print(f"  Rate:     {SAMPLE_RATE}Hz | {BIT_DEPTH}")
     print("=" * 50)
@@ -626,4 +688,4 @@ if __name__ == "__main__":
             break
         print(f"[MONITOR] Retry {i+1}/3...")
         time.sleep(3)
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=5001, debug=False, threaded=True)
