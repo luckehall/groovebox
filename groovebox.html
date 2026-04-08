@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<title>GrooveBox</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Antonio:wght@400;700&family=Share+Tech+Mono&display=swap');
+
+  :root {
+    --orange: #ff9900;
+    --tan:    #ffcc99;
+    --blue:   #9999ff;
+    --purple: #cc99ff;
+    --red:    #ff3300;
+    --green:  #66ff66;
+    --yellow: #ffff66;
+    --bg:     #000;
+    --panel:  #0a0a0a;
+    --dim:    #664400;
+    --border: #1a1a1a;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+  html, body {
+    width:100%; height:100%;
+    background:var(--bg);
+    font-family:'Antonio', sans-serif;
+    color:var(--orange);
+    overflow:hidden;
+  }
+
+  .app {
+    display:flex;
+    flex-direction:column;
+    height:100dvh;
+    padding:10px;
+    gap:8px;
+  }
+
+  /* ── HEADER ──────────────────────────────────── */
+  .header {
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-shrink:0;
+  }
+
+  .logo {
+    background:var(--orange);
+    border-radius:20px;
+    padding:8px 16px;
+    font-size:22px;
+    font-weight:700;
+    letter-spacing:4px;
+    color:#000;
+    white-space:nowrap;
+  }
+
+  .status-bar {
+    flex:1;
+    background:var(--panel);
+    border:2px solid var(--orange);
+    border-radius:20px;
+    padding:8px 14px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+
+  .status-dot {
+    width:10px; height:10px;
+    border-radius:50%;
+    background:#442200;
+    flex-shrink:0;
+    transition:all 0.3s;
+  }
+  .status-dot.rec  { background:var(--red);    box-shadow:0 0 8px var(--red);    animation:blink 1s infinite; }
+  .status-dot.play { background:var(--green);  box-shadow:0 0 8px var(--green); }
+  .status-dot.pause{ background:var(--yellow); box-shadow:0 0 8px var(--yellow);}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+
+  .status-text {
+    font-size:13px;
+    font-weight:700;
+    letter-spacing:2px;
+    color:var(--orange);
+    flex:1;
+  }
+
+  .monitor-badge {
+    font-size:8px;
+    letter-spacing:1px;
+    padding:2px 7px;
+    border-radius:8px;
+    background:#1a0a00;
+    color:var(--orange);
+    border:1px solid var(--dim);
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+  .monitor-badge.off { color:#ff6644; border-color:#662200; }
+
+  /* ── TIMER ───────────────────────────────────── */
+  .timer-block {
+    flex-shrink:0;
+    background:var(--panel);
+    border:2px solid var(--blue);
+    border-radius:12px;
+    padding:10px 16px;
+  }
+
+  .timer-label {
+    font-size:8px;
+    letter-spacing:3px;
+    color:var(--blue);
+    opacity:0.6;
+    margin-bottom:2px;
+  }
+
+  .timer-value {
+    font-family:'Share Tech Mono', monospace;
+    font-size:clamp(42px, 12vw, 64px);
+    color:var(--blue);
+    letter-spacing:4px;
+    text-shadow:0 0 20px rgba(153,153,255,0.4);
+    line-height:1;
+  }
+
+  /* ── INFO LIST ───────────────────────────────── */
+  .info-list {
+    flex-shrink:0;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:12px;
+    overflow:hidden;
+  }
+
+  .info-row {
+    display:flex;
+    align-items:center;
+    padding:11px 14px;
+    border-bottom:1px solid var(--border);
+    gap:10px;
+  }
+  .info-row:last-child { border-bottom:none; }
+
+  .info-lbl {
+    font-size:10px;
+    letter-spacing:2px;
+    color:#555;
+    text-transform:uppercase;
+    width:82px;
+    flex-shrink:0;
+  }
+
+  .info-sep {
+    width:2px;
+    height:16px;
+    background:var(--dim);
+    border-radius:1px;
+    flex-shrink:0;
+  }
+
+  .info-val {
+    font-family:'Share Tech Mono', monospace;
+    font-size:15px;
+    color:var(--orange);
+    flex:1;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .info-val.blue   { color:var(--blue); }
+  .info-val.green  { color:var(--green); }
+  .info-val.purple { color:var(--purple); }
+
+  /* ── TAPE ────────────────────────────────────── */
+  .tape-block {
+    flex-shrink:0;
+    padding:0 2px;
+  }
+
+  .tape-bar {
+    height:8px;
+    background:#000;
+    border:1px solid #333;
+    border-radius:4px;
+    overflow:hidden;
+    margin-bottom:4px;
+  }
+
+  .tape-fill {
+    height:100%;
+    width:0%;
+    background:repeating-linear-gradient(
+      90deg,
+      var(--orange) 0px, var(--orange) 8px,
+      #cc7700 8px, #cc7700 9px
+    );
+    border-radius:4px;
+    transition:width 1s linear;
+  }
+
+  .tape-times {
+    display:flex;
+    justify-content:space-between;
+    font-family:'Share Tech Mono', monospace;
+    font-size:9px;
+    color:#444;
+  }
+
+  /* ── TRANSPORT ───────────────────────────────── */
+  .transport {
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    justify-content:flex-end;
+  }
+
+  .btn {
+    border:none;
+    outline:none;
+    cursor:pointer;
+    border-radius:14px;
+    font-family:'Antonio', sans-serif;
+    font-weight:700;
+    color:#000;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:4px;
+    transition:filter 0.1s, transform 0.08s;
+    touch-action:manipulation;
+    width:100%;
+  }
+  .btn:active { filter:brightness(0.65); transform:scale(0.96); }
+  .btn.active { filter:brightness(1.2); }
+
+  .btn-icon { line-height:1; font-size:clamp(26px, 6vw, 36px); display:flex; align-items:center; justify-content:center; }
+  .btn-lbl  { font-size:clamp(11px, 2.5vw, 13px); letter-spacing:2px; }
+
+  /* Altezza fissa per icone riga secondaria — allinea le scritte */
+  .play-icon, .pause-icon, .files-icon,
+  .btn-off .btn-icon {
+    height: clamp(26px, 6vw, 36px);
+  }
+
+  /* REC — cerchio rosso */
+  .rec-icon::before {
+    content:'';
+    display:block;
+    width:0.9em; height:0.9em;
+    border-radius:50%;
+    background:#000;
+  }
+  .btn-rec .rec-icon::before { background:#000; width:1em; height:1em; }
+
+  /* STOP — quadrato */
+  .stop-icon::before {
+    content:'';
+    display:block;
+    width:0.8em; height:0.8em;
+    background:#000;
+    border-radius:2px;
+  }
+
+  /* PLAY — triangolo */
+  .play-icon::before {
+    content:'';
+    display:inline-block;
+    width:0; height:0;
+    border-style:solid;
+    border-width:0.5em 0 0.5em 0.85em;
+    border-color:transparent transparent transparent #000;
+  }
+
+  /* PAUSE — due barre */
+  .pause-icon {
+    gap:0.2em;
+  }
+  .pause-icon::before, .pause-icon::after {
+    content:'';
+    display:block;
+    width:0.28em; height:0.85em;
+    background:#000;
+    border-radius:2px;
+  }
+
+  /* REW — due triangoli a sinistra */
+  .rew-icon {
+    gap:0.05em;
+  }
+  .rew-icon::before, .rew-icon::after {
+    content:'';
+    display:inline-block;
+    width:0; height:0;
+    border-style:solid;
+    border-width:0.4em 0.65em 0.4em 0;
+    border-color:transparent #000 transparent transparent;
+  }
+
+  /* FF — due triangoli a destra */
+  .ff-icon {
+    gap:0.05em;
+  }
+  .ff-icon::before, .ff-icon::after {
+    content:'';
+    display:inline-block;
+    width:0; height:0;
+    border-style:solid;
+    border-width:0.4em 0 0.4em 0.65em;
+    border-color:transparent transparent transparent #000;
+  }
+
+  /* FILES — tre linee */
+  .files-icon {
+    flex-direction:column;
+    gap:0.18em;
+    justify-content:center;
+  }
+  .files-icon::before {
+    content:'';
+    display:block;
+    width:0.85em; height:0.13em;
+    background:#000;
+    border-radius:2px;
+    box-shadow:0 0.31em 0 #000;
+  }
+  .files-icon::after {
+    content:'';
+    display:block;
+    width:0.85em; height:0.13em;
+    background:#000;
+    border-radius:2px;
+    margin-top:0.18em;
+  }
+
+  /* REC */
+  .btn-rec {
+    background:var(--red);
+    height:clamp(100px, 24vw, 130px);
+    border-radius:18px;
+  }
+  .btn-rec .btn-icon { font-size:clamp(42px, 11vw, 60px); }
+  .btn-rec.active { animation:rec-glow 1s infinite; }
+  @keyframes rec-glow {
+    0%,100%{ box-shadow:0 0 12px var(--red); }
+    50%    { box-shadow:0 0 30px var(--red), 0 0 60px rgba(255,51,0,0.3); }
+  }
+
+  /* Riga 3 pulsanti */
+  .btn-row {
+    display:grid;
+    gap:8px;
+  }
+  .btn-row-3 { grid-template-columns:1fr 1fr 1fr; }
+  .btn-row-4 { grid-template-columns:1fr 1fr 1fr 1fr; }
+
+  .btn-rw    { background:var(--blue);   height:clamp(85px, 20vw, 110px); border-radius:18px 10px 10px 18px; }
+  .btn-stop  { background:var(--tan);    height:clamp(85px, 20vw, 110px); border-radius:10px; }
+  .btn-ff    { background:var(--blue);   height:clamp(85px, 20vw, 110px); border-radius:10px 18px 18px 10px; }
+  .btn-play  { background:var(--green);  height:clamp(75px, 17vw, 95px); border-radius:12px; }
+  .btn-pause { background:var(--yellow); height:clamp(75px, 17vw, 95px); border-radius:12px; }
+  .btn-files { background:var(--purple); height:clamp(75px, 17vw, 95px); border-radius:12px; }
+  .btn-off   { background:#cc2200;       height:clamp(75px, 17vw, 95px); border-radius:12px; }
+
+  /* ── OVERLAY FILE ────────────────────────────── */
+  .overlay {
+    position:fixed;
+    top:0; left:0;
+    width:100%; height:100%;
+    background:rgba(0,0,0,0.97);
+    display:none;
+    flex-direction:column;
+    z-index:100;
+    padding:10px;
+    gap:8px;
+  }
+  .overlay.visible { display:flex; }
+
+  .overlay-hdr {
+    display:flex;
+    gap:8px;
+    flex-shrink:0;
+  }
+
+  .overlay-title {
+    flex:1;
+    background:var(--blue);
+    border-radius:20px;
+    padding:10px 16px;
+    font-size:15px;
+    font-weight:700;
+    letter-spacing:3px;
+    color:#000;
+  }
+
+  .overlay-close {
+    background:var(--red);
+    border:none;
+    cursor:pointer;
+    border-radius:20px;
+    padding:10px 18px;
+    font-family:'Antonio', sans-serif;
+    font-size:14px;
+    font-weight:700;
+    letter-spacing:2px;
+    color:#000;
+    touch-action:manipulation;
+  }
+  .overlay-close:active { filter:brightness(0.7); }
+
+  .file-list {
+    flex:1;
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .file-item {
+    display:flex;
+    align-items:center;
+    gap:12px;
+    background:#0a0a0a;
+    border:1px solid var(--border);
+    border-left:4px solid var(--blue);
+    border-radius:0 10px 10px 0;
+    padding:13px 14px;
+    cursor:pointer;
+    touch-action:manipulation;
+  }
+  .file-item:active { background:#151515; border-left-color:var(--orange); }
+
+  .file-icon { font-size:18px; color:var(--blue); flex-shrink:0; }
+  .file-info { flex:1; min-width:0; }
+  .file-name {
+    font-family:'Share Tech Mono', monospace;
+    font-size:11px;
+    color:var(--blue);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .file-meta { font-size:9px; color:#555; margin-top:2px; }
+  .file-dur {
+    font-family:'Share Tech Mono', monospace;
+    font-size:12px;
+    color:var(--orange);
+    flex-shrink:0;
+  }
+
+  /* ── CONFERMA SHUTDOWN ───────────────────────── */
+  .confirm-overlay {
+    position:fixed;
+    top:0; left:0;
+    width:100%; height:100%;
+    background:rgba(0,0,0,0.97);
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:20px;
+    z-index:200;
+    padding:24px;
+  }
+  .confirm-overlay.visible { display:flex; }
+
+  .confirm-icon {
+    font-size:52px;
+    font-weight:700;
+    letter-spacing:4px;
+    color:#cc2200;
+  }
+
+  .confirm-text {
+    font-size:20px;
+    font-weight:700;
+    letter-spacing:3px;
+    color:var(--orange);
+    text-align:center;
+  }
+
+  .confirm-sub {
+    font-size:11px;
+    color:#555;
+    letter-spacing:2px;
+    text-align:center;
+  }
+
+  .confirm-btns {
+    display:flex;
+    gap:14px;
+    width:100%;
+    max-width:300px;
+  }
+
+  .confirm-yes {
+    flex:1; height:56px;
+    background:#cc0000;
+    border:none; border-radius:12px;
+    font-family:'Antonio', sans-serif;
+    font-size:16px; font-weight:700;
+    letter-spacing:2px; color:#fff;
+    cursor:pointer;
+    touch-action:manipulation;
+  }
+  .confirm-yes:active { filter:brightness(0.8); }
+
+  .confirm-no {
+    flex:1; height:56px;
+    background:#333;
+    border:none; border-radius:12px;
+    font-family:'Antonio', sans-serif;
+    font-size:16px; font-weight:700;
+    letter-spacing:2px; color:#fff;
+    cursor:pointer;
+    touch-action:manipulation;
+  }
+  .confirm-no:active { filter:brightness(0.8); }
+
+  /* ── LANDSCAPE ───────────────────────────────── */
+  @media (orientation:landscape) and (max-height:480px) {
+    .app { flex-direction:row; gap:8px; }
+    .left-col { display:flex; flex-direction:column; gap:8px; flex:1; }
+    .right-col { width:190px; flex-shrink:0; display:flex; flex-direction:column; gap:8px; justify-content:flex-end; }
+    .timer-value { font-size:clamp(28px, 6vh, 40px); }
+    .btn-rec { height:50px; }
+    .btn-rw, .btn-stop, .btn-ff { height:42px; }
+    .btn-play, .btn-pause, .btn-files, .btn-off { height:36px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- OVERLAY FILE -->
+<div class="overlay" id="overlay">
+  <div class="overlay-hdr">
+    <div class="overlay-title">▶ REGISTRAZIONI</div>
+    <button class="overlay-close" onclick="closeOverlay()">✕ CHIUDI</button>
+  </div>
+  <div class="file-list" id="fileList">
+    <div style="color:var(--dim);text-align:center;padding:30px;letter-spacing:3px">CARICAMENTO...</div>
+  </div>
+</div>
+
+<!-- CONFERMA SHUTDOWN -->
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-icon">OFF</div>
+  <div class="confirm-text">SPEGNERE GROOVEBOX?</div>
+  <div class="confirm-sub">IL SISTEMA VERRA' SPENTO</div>
+  <div class="confirm-btns">
+    <button class="confirm-yes" onclick="doShutdown()">SPEGNI</button>
+    <button class="confirm-no" onclick="closeConfirm()">ANNULLA</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="app" id="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo">GrooveBox</div>
+    <div class="status-bar">
+      <div class="status-dot" id="statusDot"></div>
+      <div class="status-text" id="statusText">STANDBY</div>
+      <div class="monitor-badge" id="monitorBadge">MON ON</div>
+    </div>
+  </div>
+
+  <!-- TIMER -->
+  <div class="timer-block">
+    <div class="timer-label">ELAPSED TIME</div>
+    <div class="timer-value" id="timer">00:00:00</div>
+  </div>
+
+  <!-- INFO LIST -->
+  <div class="info-list">
+    <div class="info-row">
+      <div class="info-lbl">FILE</div>
+      <div class="info-sep"></div>
+      <div class="info-val" id="fileName">—</div>
+    </div>
+    <div class="info-row">
+      <div class="info-lbl">DIMENSIONE</div>
+      <div class="info-sep"></div>
+      <div class="info-val green" id="fileSize">—</div>
+    </div>
+    <div class="info-row">
+      <div class="info-lbl">DURATA</div>
+      <div class="info-sep"></div>
+      <div class="info-val blue" id="fileDuration">—</div>
+    </div>
+    <div class="info-row">
+      <div class="info-lbl">FORMATO</div>
+      <div class="info-sep"></div>
+      <div class="info-val purple">96kHz · 24bit · S24_3LE</div>
+    </div>
+  </div>
+
+  <!-- TAPE -->
+  <div class="tape-block">
+    <div class="tape-bar"><div class="tape-fill" id="tapeFill"></div></div>
+    <div class="tape-times">
+      <span>00:00</span>
+      <span id="tapePos">00:00:00</span>
+      <span id="tapeEnd">60:00</span>
+    </div>
+  </div>
+
+  <!-- TRANSPORT -->
+  <div class="transport">
+
+    <!-- REC -->
+    <button class="btn btn-rec" id="btnRec" onclick="transport('rec')">
+      <span class="btn-icon rec-icon"></span>
+      <span class="btn-lbl">RECORD</span>
+    </button>
+
+    <!-- REW / STOP / FF -->
+    <div class="btn-row btn-row-3">
+      <button class="btn btn-rw" id="btnRW" onclick="transport('rw')">
+        <span class="btn-icon rew-icon"></span>
+        <span class="btn-lbl">REW</span>
+      </button>
+      <button class="btn btn-stop" id="btnStop" onclick="transport('stop')">
+        <span class="btn-icon stop-icon"></span>
+        <span class="btn-lbl">STOP</span>
+      </button>
+      <button class="btn btn-ff" id="btnFF" onclick="transport('ff')">
+        <span class="btn-icon ff-icon"></span>
+        <span class="btn-lbl">FF</span>
+      </button>
+    </div>
+
+    <!-- PLAY / PAUSE / FILES / OFF -->
+    <div class="btn-row btn-row-4">
+      <button class="btn btn-play" id="btnPlay" onclick="openFileList()">
+        <span class="btn-icon play-icon"></span>
+        <span class="btn-lbl">PLAY</span>
+      </button>
+      <button class="btn btn-pause" id="btnPause" onclick="transport('pause')">
+        <span class="btn-icon pause-icon"></span>
+        <span class="btn-lbl">PAUSE</span>
+      </button>
+      <button class="btn btn-files" onclick="openFileList()">
+        <span class="btn-icon files-icon"></span>
+        <span class="btn-lbl">FILES</span>
+      </button>
+      <button class="btn btn-off" onclick="confirmShutdown()">
+        <span class="btn-icon" style="font-size:clamp(16px,4vw,22px);letter-spacing:1px;font-weight:700">PWR</span>
+        <span class="btn-lbl">OFF</span>
+      </button>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+let appState='stopped', seconds=0, timerInt=null, playDuration=0, pollInt=null;
+
+async function transport(action){
+  try{ const r=await fetch('/api/'+action,{method:'POST'}); applyState(await r.json()); }
+  catch(e){ simulateLocal(action); }
+}
+
+async function playFile(filename){
+  closeOverlay();
+  try{ const r=await fetch('/api/play',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename})}); applyState(await r.json()); }
+  catch(e){}
+}
+
+function simulateLocal(a){
+  if(a==='rec'){ if(appState==='paused'&&!document.getElementById('btnPlay').classList.contains('active')){appState='recording';startTimer();}else if(appState!=='recording'){appState='recording';seconds=0;startTimer();} }
+  else if(a==='pause'){ if(appState==='paused'){appState='recording';startTimer();}else if(appState==='recording'||appState==='playing'){appState='paused';stopTimer();} }
+  else if(a==='stop'){ appState='stopped';seconds=0;stopTimer();updateTimer();document.getElementById('tapeFill').style.width='0%'; }
+  updateUI();
+}
+
+function applyState(d) {
+  const prev = appState;
+  if(d.status) appState = d.status;
+
+  if(appState === 'playing') {
+    if(d.play_seconds !== undefined) seconds = d.play_seconds;
+    if(d.play_duration !== undefined) playDuration = d.play_duration;
+    if(d.play_filename) {
+      document.getElementById('fileName').textContent = d.play_filename;
+      document.getElementById('fileSize').textContent = d.filesize || '—';
+      document.getElementById('fileDuration').textContent = fmt(d.play_duration || 0);
+      document.getElementById('tapeEnd').textContent =
+        p(Math.floor(playDuration/3600)) + ':' + p(Math.floor(playDuration%3600/60));
+    }
+  } else {
+    if(d.seconds !== undefined) seconds = d.seconds;
+    if(d.filename) document.getElementById('fileName').textContent = d.filename;
+    document.getElementById('tapeEnd').textContent = '60:00';
+  }
+
+  // Reset in STOP
+  if(appState === 'stopped') {
+    document.getElementById('fileName').textContent = '—';
+    document.getElementById('fileSize').textContent = '—';
+    document.getElementById('fileDuration').textContent = '—';
+    document.getElementById('tapeFill').style.width = '0%';
+    seconds = 0;
+  }
+
+  if(d.filesize && appState === 'recording')
+    document.getElementById('fileSize').textContent = d.filesize;
+
+  if(appState === 'recording' || appState === 'playing') startTimer();
+  else stopTimer();
+
+  updateUI(); updateTimer();
+  if(prev !== appState) startPolling();
+}
+
+function updateUI(){
+  const dot=document.getElementById('statusDot');
+  const txt=document.getElementById('statusText');
+  const badge=document.getElementById('monitorBadge');
+  dot.className='status-dot';
+  document.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));
+  const cfg={recording:['● REC','rec','btnRec'],playing:['▶ PLAY','play','btnPlay'],paused:['|| PAUSA','pause','btnPause'],stopped:['STANDBY','','']};
+  const [label,dotClass,btnId]=cfg[appState]||cfg.stopped;
+  txt.textContent=label;
+  if(dotClass) dot.classList.add(dotClass);
+  if(btnId) document.getElementById(btnId)?.classList.add('active');
+  const monOff=appState==='playing';
+  badge.textContent=monOff?'MON OFF':'MON ON';
+  badge.className='monitor-badge'+(monOff?' off':'');
+  if(appState==='recording') document.getElementById('fileDuration').textContent=fmt(seconds);
+}
+
+function startTimer(){ if(timerInt)return; timerInt=setInterval(()=>{seconds++;updateTimer();},1000); }
+function stopTimer(){ clearInterval(timerInt); timerInt=null; }
+function p(n){ return String(n).padStart(2,'0'); }
+function fmt(s){ return p(Math.floor(s/3600))+':'+p(Math.floor(s%3600/60))+':'+p(s%60); }
+
+function updateTimer(){
+  const t=fmt(seconds);
+  document.getElementById('timer').textContent=t;
+  document.getElementById('tapePos').textContent=t;
+  const max=appState==='playing'?(playDuration||3600):3600;
+  document.getElementById('tapeFill').style.width=Math.min(100,seconds/max*100)+'%';
+}
+
+function startPolling(){
+  if(pollInt) clearInterval(pollInt);
+  if(appState==='recording') return;
+  pollInt=setInterval(poll,2000);
+}
+
+async function poll(){
+  try{
+    const r=await fetch('/api/status');
+    const d=await r.json();
+    if(d.status&&d.status!==appState) applyState(d);
+    if(appState==='playing'&&d.play_seconds!==undefined){ seconds=d.play_seconds; updateTimer(); }
+    if(appState==='recording'&&d.filesize) document.getElementById('fileSize').textContent=d.filesize;
+    if(appState==='recording'&&d.seconds!==undefined&&Math.abs(d.seconds-seconds)>3){ seconds=d.seconds; updateTimer(); }
+  }catch(e){}
+}
+startPolling();
+
+async function openFileList(){
+  document.getElementById('overlay').classList.add('visible');
+  const list=document.getElementById('fileList');
+  list.innerHTML='<div style="color:var(--dim);text-align:center;padding:30px;letter-spacing:3px">CARICAMENTO...</div>';
+  try{
+    const r=await fetch('/api/files');
+    const files=await r.json();
+    if(!files.length){ list.innerHTML='<div style="color:var(--dim);text-align:center;padding:30px;letter-spacing:3px">NESSUNA REGISTRAZIONE</div>'; return; }
+    list.innerHTML=files.map(f=>`
+      <div class="file-item" onclick="playFile('${f.name}')">
+        <div class="file-icon">▶</div>
+        <div class="file-info">
+          <div class="file-name">${f.name}</div>
+          <div class="file-meta">${f.date} · ${f.size}</div>
+        </div>
+        <div class="file-dur">${f.duration||'--:--:--'}</div>
+      </div>`).join('');
+  }catch(e){ list.innerHTML='<div style="color:var(--red);text-align:center;padding:30px">ERRORE</div>'; }
+}
+
+function closeOverlay(){ document.getElementById('overlay').classList.remove('visible'); }
+function confirmShutdown(){ document.getElementById('confirmOverlay').classList.add('visible'); }
+function closeConfirm(){ document.getElementById('confirmOverlay').classList.remove('visible'); }
+
+async function doShutdown(){
+  document.getElementById('confirmOverlay').classList.remove('visible');
+  try{ await fetch('/api/shutdown',{method:'POST'}); }catch(e){}
+  document.body.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:20px;background:#000;color:#ff9900;font-family:Antonio,sans-serif;letter-spacing:4px;text-align:center;padding:24px"><div style="font-size:48px;font-weight:700;color:#cc2200">OFF</div><div style="font-size:18px;font-weight:700">SPEGNIMENTO IN CORSO</div><div style="font-size:11px;color:#664400;margin-top:8px">ATTENDERE...</div></div>';
+}
+
+updateUI();
+</script>
+</body>
+</html>
