@@ -13,27 +13,44 @@ GrooveBox Server v2.2 - Pi 4
 import os
 import time
 import signal
+import logging
 import threading
 import subprocess
-import math
 from datetime import datetime
 from pathlib import Path
+
+from dotenv import load_dotenv
 from flask import Flask, jsonify, send_file, abort, request
+
+load_dotenv()
 
 # --- CONFIGURAZIONE ---------------------------------------------------
 
-RECORDINGS_DIR   = Path("/mnt/groovebox/Registrazioni")
-PLAYBACK_CARD    = "plughw:CARD=Headphones,DEV=0"
-SAMPLE_RATE      = 96000
-CHANNELS         = 2
-BIT_DEPTH        = "S24_3LE"
+RECORDINGS_DIR = Path(os.getenv("RECORDINGS_DIR", "/mnt/groovebox/Registrazioni"))
+PLAYBACK_CARD  = os.getenv("PLAYBACK_CARD", "plughw:CARD=Headphones,DEV=0")
+SAMPLE_RATE    = int(os.getenv("SAMPLE_RATE", 96000))
+CHANNELS       = int(os.getenv("CHANNELS", 2))
+BIT_DEPTH      = os.getenv("BIT_DEPTH", "S24_3LE")
+FF_RW_SECONDS  = int(os.getenv("FF_RW_SECONDS", 10))
+PORT           = int(os.getenv("PORT", 5000))
+
 BYTES_PER_SAMPLE = 3
 BYTES_PER_FRAME  = BYTES_PER_SAMPLE * CHANNELS
 WAV_HEADER_SIZE  = 44
-FF_RW_SECONDS    = 10
 
-PW_SOURCE = "alsa_input.usb-Terratec_PhonoPreAmp_iVinyl-00.analog-stereo"
-PW_SINK   = "alsa_output.platform-fe00b840.mailbox.stereo-fallback"
+PW_SOURCE = os.getenv("PW_SOURCE", "alsa_input.usb-Terratec_PhonoPreAmp_iVinyl-00.analog-stereo")
+PW_SINK   = os.getenv("PW_SINK",   "alsa_output.platform-fe00b840.mailbox.stereo-fallback")
+
+# --- LOGGING ----------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger(__name__)
+
+# --- APP --------------------------------------------------------------
 
 app = Flask(__name__, static_folder=".")
 RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -53,12 +70,12 @@ state = {
     "play_duration": 0,
 }
 
-_lock         = threading.Lock()
-_timer_t      = None
-_rec_proc     = None
-_play_proc    = None
-_monitor_proc = None
-_play_paused  = False
+_lock            = threading.Lock()
+_timer_t         = None
+_rec_proc        = None
+_play_proc       = None
+_monitor_proc    = None
+_play_paused     = False
 _play_generation = 0
 
 # --- UTILITY ---------------------------------------------------------
@@ -107,7 +124,7 @@ def _start_monitor():
         f'--capture-props="node.name={PW_SOURCE}" '
         f'--playback-props="node.name={PW_SINK}"'
     )
-    print(f"[MONITOR] Avvio...")
+    log.info("MONITOR avvio...")
     _monitor_proc = subprocess.Popen(
         cmd, shell=True,
         stdout=subprocess.DEVNULL,
@@ -115,10 +132,10 @@ def _start_monitor():
     )
     time.sleep(0.5)
     if _monitor_proc.poll() is not None:
-        print("[MONITOR] ERRORE!")
+        log.error("MONITOR errore: processo terminato subito")
         _monitor_proc = None
     else:
-        print("[MONITOR] Attivo.")
+        log.info("MONITOR attivo")
 
 def _stop_monitor():
     """Ferma il loopback PipeWire."""
@@ -129,7 +146,7 @@ def _stop_monitor():
             _monitor_proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
             _monitor_proc.kill()
-        print("[MONITOR] Fermato.")
+        log.info("MONITOR fermato")
     _monitor_proc = None
     subprocess.run(["pkill", "-f", "pw-loopback"], capture_output=True)
     time.sleep(0.3)
@@ -158,7 +175,7 @@ def _stop_arecord():
             except subprocess.TimeoutExpired:
                 _rec_proc.kill()
                 _rec_proc.wait()
-            print("[REC] pw-record fermato.")
+            log.info("REC pw-record fermato")
         _rec_proc = None
     subprocess.run(["pkill", "-f", "pw-record"], capture_output=True)
     time.sleep(0.3)
@@ -176,7 +193,7 @@ def _start_arecord(filepath):
         "--latency", "512/48000",
         str(filepath)
     ]
-    print(f"[REC] {' '.join(cmd)}")
+    log.info("REC %s", " ".join(cmd))
     _rec_proc = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
@@ -184,23 +201,23 @@ def _start_arecord(filepath):
     )
     time.sleep(0.5)
     if _rec_proc.poll() is not None:
-        print("[REC] ERRORE: pw-record terminato subito!")
+        log.error("REC pw-record terminato subito")
         _rec_proc = None
         return False
-    print("[REC] pw-record avviato.")
+    log.info("REC pw-record avviato")
     return True
 
 def _pause_arecord():
     global _rec_proc
     if _rec_proc and _rec_proc.poll() is None:
         _rec_proc.send_signal(signal.SIGSTOP)
-        print("[PAUSE] pw-record sospeso.")
+        log.info("PAUSE pw-record sospeso")
 
 def _resume_arecord():
     global _rec_proc
     if _rec_proc and _rec_proc.poll() is None:
         _rec_proc.send_signal(signal.SIGCONT)
-        print("[RESUME] pw-record ripreso.")
+        log.info("RESUME pw-record ripreso")
         return True
     return False
 
@@ -221,7 +238,7 @@ def _stop_aplay():
             except subprocess.TimeoutExpired:
                 _play_proc.kill()
                 _play_proc.wait()
-            print("[PLAY] aplay fermato.")
+            log.info("PLAY aplay fermato")
         _play_proc = None
     subprocess.run(["pkill", "-f", f"aplay.*{PLAYBACK_CARD}"], capture_output=True)
     subprocess.run(["pkill", "-f", "sox.*Registrazioni"], capture_output=True)
@@ -234,7 +251,7 @@ def _pause_aplay():
             os.killpg(os.getpgid(_play_proc.pid), signal.SIGSTOP)
         except Exception:
             _play_proc.send_signal(signal.SIGSTOP)
-        print("[PAUSE] aplay sospeso.")
+        log.info("PAUSE aplay sospeso")
 
 def _resume_aplay():
     global _play_proc
@@ -243,7 +260,7 @@ def _resume_aplay():
             os.killpg(os.getpgid(_play_proc.pid), signal.SIGCONT)
         except Exception:
             _play_proc.send_signal(signal.SIGCONT)
-        print("[RESUME] aplay ripreso.")
+        log.info("RESUME aplay ripreso")
         return True
     return False
 
@@ -255,7 +272,7 @@ def _start_aplay(filepath, start_second=0):
 
     if start_second == 0:
         cmd = ["aplay", "-D", PLAYBACK_CARD, str(filepath)]
-        print(f"[PLAY] {' '.join(cmd)}")
+        log.info("PLAY %s", " ".join(cmd))
         try:
             _play_proc = subprocess.Popen(
                 cmd,
@@ -265,7 +282,7 @@ def _start_aplay(filepath, start_second=0):
             )
             return True
         except Exception as e:
-            print(f"[PLAY] Errore: {e}")
+            log.error("PLAY errore: %s", e)
             return False
     else:
         cmd = (
@@ -273,7 +290,7 @@ def _start_aplay(filepath, start_second=0):
             f'trim {start_second} | '
             f'aplay -D {PLAYBACK_CARD} -r {SAMPLE_RATE} -c {CHANNELS} -f S16_LE -'
         )
-        print(f"[PLAY] FF/RW da {_fmt_time(start_second)}")
+        log.info("PLAY FF/RW da %s", _fmt_time(start_second))
         try:
             _play_proc = subprocess.Popen(
                 cmd,
@@ -284,7 +301,7 @@ def _start_aplay(filepath, start_second=0):
             )
             return True
         except Exception as e:
-            print(f"[PLAY] Errore: {e}")
+            log.error("PLAY errore: %s", e)
             return False
 
 def _play_monitor_loop(generation):
@@ -313,7 +330,7 @@ def _play_monitor_loop(generation):
                         "play_seconds": 0,
                     })
             _ensure_monitor()
-            print("[PLAY] Riproduzione terminata.")
+            log.info("PLAY riproduzione terminata")
             break
         time.sleep(0.5)
 
@@ -347,7 +364,7 @@ def _resume_from_pause():
             with _lock:
                 state["status"] = "recording"
             _start_timer()
-            print("[RESUME] Registrazione ripresa.")
+            log.info("RESUME registrazione ripresa")
             return True
     return False
 
@@ -404,7 +421,7 @@ def api_rec():
 
     _ensure_monitor()
     _start_timer()
-    print(f"[REC] Avviata: {fname}")
+    log.info("REC avviata: %s", fname)
     with _lock:
         return jsonify(dict(state))
 
@@ -423,7 +440,7 @@ def api_stop():
             "level_r":      -60.0,
             "play_seconds": 0,
         })
-    print("[STOP]")
+    log.info("STOP")
     with _lock:
         return jsonify(dict(state))
 
@@ -437,7 +454,7 @@ def api_pause():
         _pause_arecord()
         with _lock:
             state["status"] = "paused"
-        print("[PAUSE] Registrazione in pausa.")
+        log.info("PAUSE registrazione in pausa")
         with _lock:
             return jsonify(dict(state))
 
@@ -451,7 +468,7 @@ def api_pause():
         _play_paused = True
         with _lock:
             state["status"] = "paused"
-        print("[PAUSE] Riproduzione in pausa.")
+        log.info("PAUSE riproduzione in pausa")
         with _lock:
             return jsonify(dict(state))
 
@@ -460,7 +477,7 @@ def api_pause():
             _play_paused = False
             with _lock:
                 state["status"] = "playing"
-            print("[RESUME] Riproduzione ripresa.")
+            log.info("RESUME riproduzione ripresa")
             with _lock:
                 return jsonify(dict(state))
 
@@ -496,7 +513,7 @@ def api_play():
             "play_filename": filename,
             "play_seconds":  0,
             "play_duration": duration,
-            "filesize":      filesize,    # <-- aggiungi
+            "filesize":      filesize,
             "level_l":       -60.0,
             "level_r":       -60.0,
         })
@@ -512,7 +529,7 @@ def api_play():
     gen = _play_generation
     t = threading.Thread(target=_play_monitor_loop, args=(gen,), daemon=True)
     t.start()
-    print(f"[PLAY] Avviato: {filename}")
+    log.info("PLAY avviato: %s", filename)
     with _lock:
         return jsonify(dict(state))
 
@@ -541,7 +558,7 @@ def api_ff():
         t = threading.Thread(target=_play_monitor_loop, args=(gen,), daemon=True)
         t.start()
 
-    print(f"[FF] -> {_fmt_time(new_sec)}")
+    log.info("FF -> %s", _fmt_time(new_sec))
     with _lock:
         return jsonify(dict(state))
 
@@ -569,7 +586,7 @@ def api_rw():
         t = threading.Thread(target=_play_monitor_loop, args=(gen,), daemon=True)
         t.start()
 
-    print(f"[RW] -> {_fmt_time(new_sec)}")
+    log.info("RW -> %s", _fmt_time(new_sec))
     with _lock:
         return jsonify(dict(state))
 
@@ -602,7 +619,7 @@ def api_shutdown():
     _stop_arecord()
     _stop_aplay()
     _stop_monitor()
-    print("[SHUTDOWN] Spegnimento in corso...")
+    log.info("SHUTDOWN spegnimento in corso")
     threading.Thread(
         target=lambda: (time.sleep(2), os.system("sudo shutdown -h now")),
         daemon=True
@@ -612,18 +629,18 @@ def api_shutdown():
 # --- AVVIO -----------------------------------------------------------
 
 if __name__ == "__main__":
-    print("=" * 50)
-    print("  GrooveBox Server v2.2 - Pi 4")
-    print(f"  Input:    PipeWire -> {PW_SOURCE}")
-    print(f"  Output:   {PLAYBACK_CARD}")
-    print(f"  Monitor:  SEMPRE ATTIVO")
-    print(f"  Files:    {RECORDINGS_DIR}")
-    print(f"  Rate:     {SAMPLE_RATE}Hz | {BIT_DEPTH}")
-    print("=" * 50)
+    log.info("=" * 50)
+    log.info("  GrooveBox Server v2.2 - Pi 4")
+    log.info("  Input:    PipeWire -> %s", PW_SOURCE)
+    log.info("  Output:   %s", PLAYBACK_CARD)
+    log.info("  Monitor:  SEMPRE ATTIVO")
+    log.info("  Files:    %s", RECORDINGS_DIR)
+    log.info("  Rate:     %sHz | %s", SAMPLE_RATE, BIT_DEPTH)
+    log.info("=" * 50)
     for i in range(3):
         _start_monitor()
         if _monitor_proc and _monitor_proc.poll() is None:
             break
-        print(f"[MONITOR] Retry {i+1}/3...")
+        log.warning("MONITOR retry %d/3...", i + 1)
         time.sleep(3)
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=PORT, debug=False, threaded=True)
