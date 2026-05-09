@@ -41,3 +41,7 @@ htmlcov/
 
 # mypy
 .mypy_cache/
+
+# Claude Code — local settings (mai committare)
+.claude/settings.local.json
+.claude/todos.json
