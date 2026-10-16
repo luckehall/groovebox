@@ -92,6 +92,31 @@ WantedBy=multi-user.target
 sudo systemctl enable --now groovebox
 ```
 
+## Installazione come app su iPhone (HTTPS con Caddy)
+
+Safari segnala come "non sicuro" un sito in HTTP semplice. Per toglierlo, e perché il service worker parta, serve HTTPS. In rete locale la soluzione più semplice è Caddy con certificato interno, davanti a GrooveBox (qui sulla porta 5000: usa il valore di `PORT` in `.env`).
+
+Sul Raspberry Pi (sostituisci `raspberrypi.local` con l'output di `hostname` seguito da `.local`):
+
+```bash
+sudo apt install -y caddy
+sudo tee /etc/caddy/Caddyfile <<'EOF'
+raspberrypi.local {
+    tls internal
+    reverse_proxy 127.0.0.1:5000
+}
+EOF
+sudo systemctl restart caddy
+```
+
+Certificato sull'iPhone, una volta sola:
+
+1. Copia sul Mac `/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt` (si legge con `sudo`, ad esempio copiandolo prima in `/tmp`) e invialo all'iPhone con AirDrop.
+2. Impostazioni, "Profilo scaricato", Installa.
+3. Impostazioni, Generali, Info, Impostazioni certificati: attiva la fiducia piena per il certificato.
+
+Poi apri `https://raspberrypi.local` in Safari e usa Condividi, "Aggiungi a Home". L'icona è legata all'indirizzo con cui viene aggiunta: se esiste già un collegamento creato dal vecchio indirizzo HTTP, rimuovilo e rifallo. Dopo un aggiornamento delle icone, elimina e riaggiungi il collegamento: iOS conserva quella presente al momento dell'aggiunta.
+
 ## API
 
 | Metodo | Endpoint | Descrizione |
@@ -115,6 +140,8 @@ groovebox/
 ├── groovebox-server.py   # Backend Flask + logica audio
 ├── groovebox.html        # Frontend (PWA single-page)
 ├── manifest.json         # Web App Manifest
+├── sw.js                 # Service worker (richiesto dall'installabilità PWA)
+├── icon-180.png          # Icona iOS (apple-touch-icon)
 ├── icon-192.png          # Icona PWA
 ├── icon-512.png          # Icona PWA
 ├── requirements.txt      # Dipendenze Python

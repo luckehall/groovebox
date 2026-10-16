@@ -665,6 +665,14 @@ def api_download(filename):
 def manifest():
     return send_file("manifest.json", mimetype="application/json")
 
+@app.route("/sw.js")
+def service_worker():
+    return send_file("sw.js", mimetype="application/javascript")
+
+@app.route("/icon-180.png")
+def icon180():
+    return send_file("icon-180.png", mimetype="image/png")
+
 @app.route("/icon-192.png")
 def icon192():
     return send_file("icon-192.png", mimetype="image/png")
